@@ -1,15 +1,52 @@
 services:
-  psql_bp:
-    image: postgres:latest
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${BLUEPRINT_DB_DATABASE}
-      POSTGRES_USER: ${BLUEPRINT_DB_USERNAME}
-      POSTGRES_PASSWORD: ${BLUEPRINT_DB_PASSWORD}
+  paugo-api:
+    restart: always
     ports:
-      - "${BLUEPRINT_DB_PORT}:5432"
+      - 8080:8080
+    build:
+      dockerfile: Dockerfile
+      context: .
+    env_file:
+      - .env
+    networks:
+      - api
+
+  postgres:
+    image: postgres:16-alpine
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $DB_USERNAME -d $DB_DATABASE"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE}
+    env_file:
+      - .env
     volumes:
-      - psql_volume_bp:/var/lib/postgresql/data
+      - pg_data:/var/lib/postgresql@16/data
+    ports:
+      - "5432:5432"
+    networks:
+      - api
+
+  migrations:
+    build:
+      dockerfile: Dockerfile
+      context: internal/database/migrations
+    environment:
+      GOOSE_DRIVER: postgres
+      GOOSE_DBSTRING: ${GOOSE_DRIVER}://${DB_USERNAME}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_DATABASE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - api
 
 volumes:
-  psql_volume_bp:
+  pg_data:
+
+networks:
+  api:
+    driver: bridge
